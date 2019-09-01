@@ -3,12 +3,12 @@
 The main file that interfaces with a Wunder Cam S1 through Python.
 """
 
-import os
-import re
-import io
-import copy
-import requests
-import PIL.Image
+import os           # Handles paths and filenames
+import re           # Regular expressions to decode the metadata in image and video filenames
+import io           # File handlers for streams in saving SingleStorage
+import copy         # Handles copying of the ResourceContainer data structure
+import requests     # Handles all file I/O activity with the camera over an HTTP interface
+import PIL.Image    # Serves images, directly capable to be modified by python code.
 
 # Convenience presets for the naming rules used by the S1 hardware to name Image and Video files.
 # The named attributes of these regular expressions are stored along with a file as the file's metadata.
@@ -18,28 +18,46 @@ video_file_re = re.compile("Vid_(?P<year>[0-9][0-9][0-9][0-9])(?P<month>[0-9][0-
 # In the case of "Continuous" takes, WunderCam can pack them together in a sequence automatically.
 img_group_by = ["year", "month", "day", "hour", "minute", "second"]
 vid_group_by = img_group_by
+# Attribute to order image sequences by.
+# TODO: LOW, It should be possible for order-by to operate over multiple fields, to produce more complex groupings (e.g.
+#       all images taken within an hour.
+img_order_by = "frame"
+vid_order_by = img_order_by
 
-class SingleAsset:    
-    """A single asset held by the camera.
+class SingleResource:    
+    """A single file resource held in the camera's disk space.
     
-    For example, this can be a single image or video stored on the camera's SD card.
-    Note: Plain users of this package do not usually need to instantiate this object directly.
+    This can be a single image or video stored on the camera's SD card.
+    
+    .. note::
+        If you are simply using this package to interface with the camera you do not usually need to 
+        instantiate this class directly.
     """
     
     def __init__(self, full_remote_filename, metadata = None):
+        """Instantiates the SingleResource by its filename and optional metadata.
+        
+        :param full_remote_filename: Usually something of the form http://camera_ip/DCIM/Image/somethingsomething.jpg
+        :type full_remote_filename: str(path)
+        :param metadata: Metadata recovered from applying a filename regular expression.
+        :type metadata: dict:"""
         self.full_remote_filename = full_remote_filename
         if metadata is not None:
             self.metadata = metadata
+        # Hash values are used for fast difference operations, when it comes to filtering out which resources where 
+        # created by a particular action. See function ResourceList.__sub__() for more details.
         self._hash_value = hash(self.full_remote_filename)
             
     def __hash__(self):
+        """A SingleResource's hash value is the string hash of its full filename."""
         return self._hash_value
         
     def get(self):
-        """Retrieves the asset from the camera and serves it to the application in the right format.
+        """Retrieves a resource from the camera and serves it to the application in the right format.
         
-        Note: As of this writing, anything other than image/jpeg will raise an exception. To save the 
-        resource locally, please use save_to."""
+        .. warning :: 
+            As of writing this line, anything other than image/jpeg will raise an exception. To save the 
+            resource locally, please see SingleResource.save_to()."""
         
         try:
             image_data = requests.get(self.full_remote_filename, timeout=5)
@@ -48,17 +66,18 @@ class SingleAsset:
             
         if not image_data.status_code==200:
             raise Exception("Transfer went wrong")
-        print(image_data.headers)
+            
         if image_data.headers["content-type"] == "image/jpeg":    
             return PIL.Image.open(io.BytesIO(image_data.content))
         else:
-            raise Exception("Cannot handle this content type")
+            raise Exception("Cannot handle content type %s" % image_data.headers["content-type"])
             
     def save_to(self, filename):
-        """Saves a resource to a local path.
+        """Saves a resource to a local path as a binary file.
         
-        :param filename:
+        :param filename: The local filename to save this file to.
         :type filename: str(path)"""
+        
         try:
             data = requests.get(self.full_remote_filename, timeout=5)
         except requests.exceptions.Timeout:
@@ -70,19 +89,58 @@ class SingleAsset:
         with open(filename, "wb") as fd:
             fd.write(data.content)
 
-class SequenceAsset:
+
+class SequenceResource:
+    """A sequence resource at the camera's memory space.
+    
+    Sequence resources are produced by the "Continuous" (or "Burst") mode and are basically a set of images that were
+    collected after a single "trigger" action. PyWunderCam will serve these as one resource if a filename regular
+    expression and list of group-by attributes are provided.
+    
+    .. note::        
+        This is basically a tuple of SingleResource with a convenience get() to retrieve all resources of the sequence.    
+    """
     
     def __init__(self, file_io_uri, file_list):
+        """Initialises the SequenceResource.
+        
+        .. note ::
+        
+            If you are simply using this package to interface with the camera you do not usually need to 
+            instantiate this class directly.
+        
+            SequenceReousrce is instantiated via a list of resources that describe multiple files.
+            For the specifics of the format of file_list, please see the documentation of ResourceContainer.
+            
+        :param file_io_uri: The top level URI that the resource resides in at the camera's memory space.
+        :type file_io_uri: str(URI)
+        :param file_list: A list of (filename, metadata, index string) for each of the resources. Please see 
+                          ResourceContainer for more.
+        :type file_list: list
+        """        
+
         self._seq = []
+        # The hash value of a sequence is the hash value of its concatenated filenames.
         self._hash_value = hash("".join(map(lambda x:x[0], file_list)))
         for a_file in file_list:
-            self._seq.append(SingleAsset("%s%s" % (file_io_uri,a_file[0]), metadata = a_file[1]))
+            self._seq.append(SingleResource("%s%s" % (file_io_uri,a_file[0]), metadata = a_file[1]))
+        # Notice here, resources are essentially immutable.
         self._seq = tuple(self._seq)
         
     def __hash__(self):
         return self._hash_value
         
     def __getitem__(self, item):
+        """ **Zero based** simple accessor for the individual SingleResource that make up a sequence.
+        
+        If an attribute to sort resources by was provided when ResourceContainer was instantiated, SingleResources
+        will appear sorted. However, the camera uses **one based indexing** but thie accessor here is using plain 
+        simple **zero based** indexing. 
+        
+        :param item: The index within the sequence to retrieve.
+        :type item: int (0 < item < len(self._seq))
+        """
+        
         return self._seq[item]
         
     def __len__(self):
@@ -96,20 +154,34 @@ class SequenceAsset:
         
     
         
-class AssetList:
-    """An AssetList represents a list of files that are accessed via an HTTP interface
+class ResourceContainer:
+    """A ResourceContainer represents a list of files that are accessed via an HTTP interface.
     
     Usually, in devices like cameras, scanners, etc, the file name of an image, encodes a number of metadata, such 
-        as time, date, sequence number and others. The file_rule is used to parse these metadata
+    as time, date, sequence number and others. A file_rule is used to parse these metadata. Based on the 
+    assumption that sequences of resources would share part of their filename characteristics, it is possible to group 
+    resources that are created as a result of a **single action**. If a "frame" attribute is provided as well, it is 
+    also possible to order these resources in the order they were taken.
     """    
-    def __init__(self, file_io_uri, file_re = None, group_by = None):
-        """Initialises AssetList and performs an initial scan over remote_path for single or mulitple assets."""
+    def __init__(self, file_io_uri, file_re = None, group_by = None, order_by = None):
+        """Initialises ResourceContainer and performs an initial scan of the remote file space.
         
-        # anchor_re = re.compile("\<a href=\"(?P<href>.+?)\"\>(?P<link_text>.+?)\</a\>") 
+        :param file_io_uri: The top level remote URI to scan. Most of the times this is a directory, so **its trailing
+                            slash must be retained**.
+        :type file_io_uri: str(path)
+        :param file_re: A regular expression with named groups to extract metadata from a resource's filename. If not
+                        provided
+        :type file_re: str(compiled regexp)
+        :param group_by: list of attributes (from the named groups) to identify sequences of resources by.
+        :type group_by: list of str
+        :param order_by: A single attribute to order sequence elements by. e.g. Frame Number. 
+        :type order_by: str
+        """
+        # A very simple rule to read individual anchor elements that denote individual file resources.
         self.anchor_re = re.compile("\<a href=\"(?P<href>.+?)\"\>.+?\</a\>")
         self.file_re = None
         self.group_by = None
-        self._assets = []
+        self._resources = []
         
         try:
             file_data_response = requests.get(file_io_uri, timeout=5)
@@ -142,38 +214,62 @@ class AssetList:
                 grouped_files[a_file[0]] = [a_file[1]]
                 
         for a_file in grouped_files.values():
-            # pdb.set_trace()
             if len(a_file)>1:
-                self._assets.append(SequenceAsset(file_io_uri,a_file))
+                self._resources.append(SequenceResource(file_io_uri,a_file))
             else:
-                self._assets.append(SingleAsset("%s%s" % (file_io_uri,a_file[0][0]),metadata=a_file[0][1]))
-        self._assets = tuple(self._assets)
+                self._resources.append(SingleResource("%s%s" % (file_io_uri,a_file[0][0]),metadata=a_file[0][1]))
+        self._resources = tuple(self._resources)
                 
     def __getitem__(self,item):
-        return self._assets[item]
+        return self._resources[item]
         
     def __len__(self):
-        return len(self._assets)
+        return len(self._resources)
         
     def __sub__(self, other):
+        """Performs a quick subtraction between two ResourceContainer to discover which files have changed.
+        
+        The subtraction has to respect the "order" of operands. The usual sequence of actions is:
+        
+        1. Setup camera's state (C)
+        2. Get a ResourceContainer (U)
+        3. Trigger camera (updates state)
+        4. Get a ResourceContainer (V)
+        
+        To discover which resources were created as a result of the trigger, you can simply do:
+        >> changed_resources = V-U
+        Doing the opposite would indicate no change.
+        
+        :param other: Another ResourceContainer to evaluate the difference on
+        :type other: ResourceContainer
+        """
+        
         asset_idx = {}
-        diff_assets = []
-        for another_asset in other._assets:
-            asset_idx[hash(another_asset)] = another_asset
+        diff_resources = []
+        for another_resource in other._resources:
+            asset_idx[hash(another_resource)] = another_resource
                 
-        for an_asset in self._assets:
+        for a_resource in self._resources:
             try:
-                asset_idx[hash(an_asset)]
+                asset_idx[hash(a_resource)]
             except KeyError:
-                diff_assets.append(an_asset)
-        new_asset_list = copy.copy(self)
-        new_asset_list._assets = tuple(diff_assets)
-        return new_asset_list
+                diff_assets.append(a_resource)
+        new_resource_container = copy.copy(self)
+        new_resource_container._resources = tuple(diff_resources)
+        return new_resource_container
                 
                 
 
 class CamConf:
-    """Represents all data that capture the camera's state"""
+    """Represents all data that capture the camera's state.
+    
+    The class exposes properties with Pythonic names that are fully documented and ensures that the values 
+    that represent the camera's state are valid throughout their round trip to the hardware and back. This class
+    also handles marshalling between the variable names used by the hardware and their Python counterparts.
+    """
+    
+    # These are all the camera attributes that this package can interpret. These are the actual keys in various JSON
+    # data structures that are exchanged between the client and the server.
     _camera_data_attributes = ["CurPvSMStatus", "CurHpSMStatus", "CurWpSMStatus", "BatteryGird", "ShootMode", 
         "SettingMode", "ChargeFlag", "HDMIonnectFlag", "SdcardplugFlag", "ErrorCode", "bSupport30p", "PhotoDelay",
         "PhotoNumber", "PhotoTime", "VideoFrameRate", "VideoFrameInterval", "LoopVideoTime", "SerialNumber", 
@@ -181,6 +277,11 @@ class CamConf:
         "capacity", "remainTime", "remainNum", "Mute", "AutoShutDown", "WifiPass", "WifiSSID"]
             
     def __init__(self, camera_data = None):
+        """Initialise a state object, optionally with default values.
+        
+        :param camera_data: A dictionary of default values to set various fields at.
+        :type camera_data: dict
+        """
         self._camera_data_structure={}
         self._ops_to_apply = []
 
@@ -191,10 +292,16 @@ class CamConf:
             self._camera_data_structure.update(camera_data)
     
     def _prepare(self):
+        """Prepares the state data structure to start queing state request changes."""
         self._ops_to_apply = []
         
     @property
     def operations(self):
+        """Returns a list of operations to be sent to the camera hardware so that its state reflects the requested state.
+        
+            The list is of the format ``(command, params)``, where ``command`` is usually an integer and `params` a 
+            dictionary of command specific parameters. ``command`` and ``params`` are hardware specific.
+        """
         return self._ops_to_apply
         
     @property
@@ -366,9 +473,28 @@ class CamConf:
 
 
         
-class WunderCam:    
+class WunderCam:
+    """The main client object that communicates with the various services exposed by the camera.
+    
+    WunderCam handles all hardware requests and data transfers. At the very least, the camera exposes the following
+    services:
+    
+    1. An NGINX web server on ``camera_ip:80``. (Known here as the "File I/O service")
+    2. A ``fcgi_client.cgi`` script that handles specific commands towards the hardware. (Known here as the "Control
+       Service")
+    3. A Real Time Streaming Protocol (RTSP)/Real Data Transport (RDT) service to handle preview video streaming.
+    
+    Currently, the WunderCam interfaces to the first two services and there are plans to be able to decode individual
+    frames from a stream, at will, in the future.
+    """
+        
     def __req_data(self, command, params = None):
-        """Makes a request to the camera taking care of timeouts, status codes and return result data type."""        
+        """Makes a request to the camera taking care of timeouts, status codes and return result data type.
+        
+        :param command: A numeric command, corresponds to the parameter ``cmd`` of the ``fcgi_client.cgi`` script.
+        :type command: int (positive)
+        :params: Parameters associated with ``command``. Usually, it is the ``WRITE`` commands that require parameters.
+        """        
         try:
             req_params = {"cmd":command}
             if params:
@@ -381,6 +507,12 @@ class WunderCam:
         return camera_data.json()
 
     def __init__(self, camera_ip):
+        """Initialises the main WunderCam client through the camera's Internet Protocol (IP) address.
+        
+        :param camera_ip: The IP that the camera is on. For WunderCam this is ``192.168.100.1`` by default.
+        :type camera_ip: str (IP)
+        """
+         
         self.camera_ip = None
         self.control_uri = None
         self.file_io_uri = None
@@ -402,11 +534,21 @@ class WunderCam:
             
     @property
     def camera_state(self):
+        """Prepares and returns the camera state object to the user.
+        
+        When the object enters the "prepare" state, any variable state changes are logged but **NOT** applied, until 
+        the user resets the state of the camera back. At that point, any changes to the state are unrolled, applied 
+        and their effect on the camera logged.
+        """
         self._current_camera_state._prepare()
         return self._current_camera_state
         
     @camera_state.setter
     def camera_state(self, new_camera_state):
+        """Applies a prepared state object to the camera.
+        
+        The object must have been obtained by the ``.camera_state`` property."""
+        
         if len(new_camera_state.operations)>0:
             returned_state_data = {}
             for an_operation in new_camera_state.operations:
@@ -449,6 +591,19 @@ class WunderCam:
         self.__req_data(24)
         # TODO: Update frames and video time
         
-    def get_assets(self, img_file_re = image_file_re, vid_file_re = video_file_re, img_group_by = img_group_by, vid_group_by = vid_group_by):
-        return {"images":AssetList("%sImage/" % self.file_io_uri, file_re = image_file_re, group_by = img_group_by), 
-                "videos":AssetList("%sVideo/" % self.file_io_uri, file_re = video_file_re, group_by = vid_group_by)}
+    def get_resources(self, img_file_re = image_file_re, vid_file_re = video_file_re, img_group_by = img_group_by, vid_group_by = vid_group_by):
+        """Returns the two resource sets that reside on the camera's file space. One for images and one for videos.
+        
+        :param img_file_re: Regular expression to unpack image filename metadata. By default set to the one the 
+                            Wunder S1 is using.
+        :type img_file_re: compiled regexp
+        :param vid_file_re: Similarly to ``img_file_re`` but for the video resource.
+        :type vid_file_re: compiled regexp
+        :param img_group_by: List of named attributes from ``img_file_re`` to use in distinguishing sequences from singles.
+        :type img_group_by: list of str
+        :param vid_group_by: Similarly to ``img_group_by`` but for video resources
+        :type vid_group_by: list of str
+        """
+        
+        return {"images":ResourceContainer("%sImage/" % self.file_io_uri, file_re = image_file_re, group_by = img_group_by), 
+                "videos":ResourceContainer("%sVideo/" % self.file_io_uri, file_re = video_file_re, group_by = vid_group_by)}

@@ -1,4 +1,6 @@
-""" Athanasios Anastasiou, August 2019
+""" 
+:authors: Athanasios Anastasiou
+:date: August 2019
 
 The main file that interfaces with a Wunder Cam S1 through Python.
 """
@@ -19,8 +21,9 @@ video_file_re = re.compile("Vid_(?P<year>[0-9][0-9][0-9][0-9])(?P<month>[0-9][0-
 img_group_by = ["year", "month", "day", "hour", "minute", "second"]
 vid_group_by = img_group_by
 # Attribute to order image sequences by.
-# TODO: LOW, It should be possible for order-by to operate over multiple fields, to produce more complex groupings (e.g.
-#       all images taken within an hour.
+# .. todo:: 
+#    LOW, It should be possible for order-by to operate over multiple fields, to produce more complex groupings (e.g.
+#    all images taken within an hour.
 img_order_by = "frame"
 vid_order_by = img_order_by
 
@@ -181,14 +184,18 @@ class ResourceContainer:
         self.anchor_re = re.compile("\<a href=\"(?P<href>.+?)\"\>.+?\</a\>")
         self.file_re = None
         self.group_by = None
+        self.order_by = None
         self._resources = []
+        
+        self.file_re = file_re
+        self.group_by = group_by
+        self.order_by = order_by
         
         try:
             file_data_response = requests.get(file_io_uri, timeout=5)
         except requests.excepetions.Timeout:
             raise Exception("Something went wrong")
-            
-        self.file_re = file_re
+
         # Remove the ../ entry in any case
         all_files = list(map(lambda x:[x,None, None],self.anchor_re.findall(file_data_response.text)))[1:]
         if file_re is not None:
@@ -215,7 +222,10 @@ class ResourceContainer:
                 
         for a_file in grouped_files.values():
             if len(a_file)>1:
-                self._resources.append(SequenceResource(file_io_uri,a_file))
+                if order_by is not None:
+                    self._resources.append(SequenceResource(file_io_uri,sorted(a_file, key=lambda x:int(x[1][order_by]))))
+                else:
+                    self._resources.append(SequenceResource(file_io_uri,a_file))
             else:
                 self._resources.append(SingleResource("%s%s" % (file_io_uri,a_file[0][0]),metadata=a_file[0][1]))
         self._resources = tuple(self._resources)
@@ -326,7 +336,7 @@ class CamConf:
     
     @shoot_mode.setter
     def shoot_mode(self, new_shoot_mode):
-        if new_shoot_mode in [0,1,2,3,4,5,6,7]:
+        if new_shoot_mode in [0,1,2,3,4,5,6]:
             self._camera_data_structure["ShootMode"] = new_shoot_mode
         else:
             raise Exception("Can't set that shoot mode")
@@ -473,7 +483,7 @@ class CamConf:
 
 
         
-class WunderCam:
+class PyWunderCam:
     """The main client object that communicates with the various services exposed by the camera.
     
     WunderCam handles all hardware requests and data transfers. At the very least, the camera exposes the following
@@ -586,12 +596,12 @@ class WunderCam:
 
     def trigger(self):
         """
-        Takes a single snapshot using the current configuration.
+        Triggers the camera to take an action given its current configuration.
         """
         self.__req_data(24)
         # TODO: Update frames and video time
         
-    def get_resources(self, img_file_re = image_file_re, vid_file_re = video_file_re, img_group_by = img_group_by, vid_group_by = vid_group_by):
+    def get_resources(self, img_file_re = image_file_re, vid_file_re = video_file_re, img_group_by = img_group_by, vid_group_by = vid_group_by, img_order_by = img_order_by):
         """Returns the two resource sets that reside on the camera's file space. One for images and one for videos.
         
         :param img_file_re: Regular expression to unpack image filename metadata. By default set to the one the 
@@ -603,7 +613,9 @@ class WunderCam:
         :type img_group_by: list of str
         :param vid_group_by: Similarly to ``img_group_by`` but for video resources
         :type vid_group_by: list of str
+        :param img_order_by: Named attribute from the image filename regular expression to be used for ordering sequences.
+        :type img_order_by: str
         """
         
-        return {"images":ResourceContainer("%sImage/" % self.file_io_uri, file_re = image_file_re, group_by = img_group_by), 
+        return {"images":ResourceContainer("%sImage/" % self.file_io_uri, file_re = image_file_re, group_by = img_group_by, order_by = img_order_by), 
                 "videos":ResourceContainer("%sVideo/" % self.file_io_uri, file_re = video_file_re, group_by = vid_group_by)}

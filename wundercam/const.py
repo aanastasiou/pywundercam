@@ -1,0 +1,12 @@
+"""Athanasios Anastasiou, September 2019
+
+Mnemonic constants for various states.
+"""
+
+SHOOTMODE_PHOTO = 0
+SHOOTMODE_3KVIDEO = 1
+SHOOTMODE_TIMER = 2
+SHOOTMODE_CONTINUOUS = 3
+SHOOTMODE_TIMELAPSE = 4
+SHOOTMODE_60FPSVIDEO = 5
+SHOOTMODE_LOOP = 6

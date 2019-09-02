@@ -2,11 +2,13 @@
 
 Mnemonic constants for various states.
 """
+import enum
 
-SHOOTMODE_PHOTO = 0
-SHOOTMODE_3KVIDEO = 1
-SHOOTMODE_TIMER = 2
-SHOOTMODE_CONTINUOUS = 3
-SHOOTMODE_TIMELAPSE = 4
-SHOOTMODE_60FPSVIDEO = 5
-SHOOTMODE_LOOP = 6
+class ShootMode(enum.Enum):
+    PHOTO = 0
+    VIDEO3K = 1
+    TIMER = 2
+    CONTINUOUS = 3
+    TIMELAPSE = 4
+    VIDEO60FPS = 5
+    LOOP = 6

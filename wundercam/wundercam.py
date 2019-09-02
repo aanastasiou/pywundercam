@@ -27,7 +27,21 @@ vid_group_by = img_group_by
 img_order_by = "frame"
 vid_order_by = img_order_by
 
-class SingleResource:    
+class AbstractResource:
+    def __init__(self):
+        self._hash_value = None
+        
+    def __hash__(self):
+        return self._hash_value
+        
+    def get(self):
+        raise NotImplementedError("AbstractResource is not to be instantiated directly")
+        
+    def save_to(self):
+        raise NotImplementedError("AbstractResource is not to be instantiated directly")
+        
+        
+class SingleResource(AbstractResource):    
     """A single file resource held in the camera's disk space.
     
     This can be a single image or video stored on the camera's SD card.
@@ -44,17 +58,14 @@ class SingleResource:
         :type full_remote_filename: str(path)
         :param metadata: Metadata recovered from applying a filename regular expression.
         :type metadata: dict:"""
+        super().__init__(self)
         self.full_remote_filename = full_remote_filename
         if metadata is not None:
             self.metadata = metadata
         # Hash values are used for fast difference operations, when it comes to filtering out which resources where 
         # created by a particular action. See function ResourceList.__sub__() for more details.
         self._hash_value = hash(self.full_remote_filename)
-            
-    def __hash__(self):
-        """A SingleResource's hash value is the string hash of its full filename."""
-        return self._hash_value
-        
+                    
     def get(self):
         """Retrieves a resource from the camera and serves it to the application in the right format.
         
@@ -75,11 +86,13 @@ class SingleResource:
         else:
             raise Exception("Cannot handle content type %s" % image_data.headers["content-type"])
             
-    def save_to(self, filename):
+    def save_to(self, filename=None):
         """Saves a resource to a local path as a binary file.
         
         :param filename: The local filename to save this file to.
         :type filename: str(path)"""
+        
+        local_filename = filename or os.path.split(self.full_remote_filename)[1]
         
         try:
             data = requests.get(self.full_remote_filename, timeout=5)
@@ -89,11 +102,11 @@ class SingleResource:
         if not data.status_code == 200:
             raise Exception("Transfer went wrong")
             
-        with open(filename, "wb") as fd:
+        with open(local_filename, "wb") as fd:
             fd.write(data.content)
 
 
-class SequenceResource:
+class SequenceResource(AbstractResource):
     """A sequence resource at the camera's memory space.
     
     Sequence resources are produced by the "Continuous" (or "Burst") mode and are basically a set of images that were
@@ -121,7 +134,7 @@ class SequenceResource:
                           ResourceContainer for more.
         :type file_list: list
         """        
-
+        super().__init__(self)
         self._seq = []
         # The hash value of a sequence is the hash value of its concatenated filenames.
         self._hash_value = hash("".join(map(lambda x:x[0], file_list)))
@@ -129,10 +142,7 @@ class SequenceResource:
             self._seq.append(SingleResource("%s%s" % (file_io_uri,a_file[0]), metadata = a_file[1]))
         # Notice here, resources are essentially immutable.
         self._seq = tuple(self._seq)
-        
-    def __hash__(self):
-        return self._hash_value
-        
+                
     def __getitem__(self, item):
         """ **Zero based** simple accessor for the individual SingleResource that make up a sequence.
         
@@ -154,6 +164,10 @@ class SequenceResource:
         for an_item in self._seq:
             result.append(an_item.get())
         return result
+        
+    def save_to(self, directory):
+        for an_item in self._seq:
+            an_item.save_to()
         
     
         

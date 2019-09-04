@@ -5,12 +5,13 @@
 The main file that interfaces with a Wunder Cam S1 through Python.
 """
 
-import os           # Handles paths and filenames
-import re           # Regular expressions to decode the metadata in image and video filenames
-import io           # File handlers for streams in saving SingleStorage
-import copy         # Handles copying of the ResourceContainer data structure
-import requests     # Handles all file I/O activity with the camera over an HTTP interface
-import PIL.Image    # Serves images, directly capable to be modified by python code.
+import os                           # Handles paths and filenames
+import re                           # Regular expressions to decode the metadata in image and video filenames
+import io                           # File handlers for streams in saving SingleStorage
+import copy                         # Handles copying of the ResourceContainer data structure
+import requests                     # Handles all file I/O activity with the camera over an HTTP interface
+import PIL.Image                    # Serves images, directly capable to be modified by python code.
+from collections import OrderedDict
 
 # Convenience presets for the naming rules used by the S1 hardware to name Image and Video files.
 # The named attributes of these regular expressions are stored along with a file as the file's metadata.
@@ -58,7 +59,7 @@ class SingleResource(AbstractResource):
         :type full_remote_filename: str(path)
         :param metadata: Metadata recovered from applying a filename regular expression.
         :type metadata: dict:"""
-        super().__init__(self)
+        super().__init__()
         self.full_remote_filename = full_remote_filename
         if metadata is not None:
             self.metadata = metadata
@@ -134,7 +135,7 @@ class SequenceResource(AbstractResource):
                           ResourceContainer for more.
         :type file_list: list
         """        
-        super().__init__(self)
+        super().__init__()
         self._seq = []
         # The hash value of a sequence is the hash value of its concatenated filenames.
         self._hash_value = hash("".join(map(lambda x:x[0], file_list)))
@@ -268,6 +269,8 @@ class ResourceContainer:
         :type other: ResourceContainer
         """
         
+        # TODO: HIGH, Raise exception when the result is null
+        
         asset_idx = {}
         diff_resources = []
         for another_resource in other._resources:
@@ -277,7 +280,7 @@ class ResourceContainer:
             try:
                 asset_idx[hash(a_resource)]
             except KeyError:
-                diff_assets.append(a_resource)
+                diff_resources.append(a_resource)
         new_resource_container = copy.copy(self)
         new_resource_container._resources = tuple(diff_resources)
         return new_resource_container
@@ -307,7 +310,7 @@ class CamConf:
         :type camera_data: dict
         """
         self._camera_data_structure={}
-        self._ops_to_apply = []
+        self._ops_to_apply = OrderedDict()
 
         self._camera_data_structure = dict(zip([key for key in self._camera_data_attributes], 
                                                 [None]*len(self._camera_data_attributes)))
@@ -317,7 +320,7 @@ class CamConf:
     
     def _prepare(self):
         """Prepares the state data structure to start queing state request changes."""
-        self._ops_to_apply = []
+        self._ops_to_apply = OrderedDict()
         
     @property
     def operations(self):
@@ -342,35 +345,85 @@ class CamConf:
         
     @property
     def battery_grid(self):
+        """Battery charge indicator in an arbitrary scale. Integer [0..6]. (Read only).
+        
+        Note:
+        
+        * The battery charge indicator on the camera is a 3 bar icon. This indicator goes all the way up to 6.
+        * The property name on the camera has been mispolled (BatterGird).
+        """
         return self._camera_data_structure["BatteryGird"]
         
     @property
     def shoot_mode(self):
+        """Determines which shoot mode to trigger. Integer [0..6]. (Read / Write).
+        
+        Note:
+        
+        * The shoot modes are as follows:
+            * 0: Photo
+            * 1: Video (3K)
+            * 2: Timer
+            * 3: Continuous (Burst)
+            * 4: Time-Lapse
+            * 5: Video (60 FPS)
+            * 6: Loop
+            
+        * To stop video recording, simply re-trigger the camera.
+        """
         return self._camera_data_structure["ShootMode"]
     
     @shoot_mode.setter
     def shoot_mode(self, new_shoot_mode):
-        if new_shoot_mode in [0,1,2,3,4,5,6]:
-            self._camera_data_structure["ShootMode"] = new_shoot_mode
+        if new_shoot_mode in range(0, 7):
+            self._ops_to_apply[21] = {"ModeType":new_shoot_mode}
         else:
             raise Exception("Can't set that shoot mode")
-        return self
         
     @property
     def setting_mode(self):
+        """Whether the camera is in manual or automatic mode. Bool [0..1]. (Read / Write).
+        
+        Note:
+        
+        * The photographic settings (iso, white_balance, exposure_compensation) require the camera to be in manual mode.
+        """
         return self._camera_data_structure["SettingMode"]
+        
+    @setting_mode.setter
+    def setting_mode(self, new_setting_mode):
+        if new_setting_mode in [0, 1]:
+            self._ops_to_apply[29] = {"SettingMode":new_setting_mode}
+        else:
+            raise Exception("Can't set that setting mode")
         
     @property
     def charge_flag(self):
+        """Whether the camera's battery is charging. Bool [0..1]. (Read only)."""
         return self._camera_data_structure["ChargeFlag"]
         
     @property
     def hdmi_connect_flag(self):
+        """Whether the HDMI connector is plugged in. Bool [0..1]. (Read only).
+        
+        Note:
+        
+        * There is no HDMI connector exposed on the S1.
+        """
         return self._camera_data_structure["HDMIConnectFlag"]
         
     @property
     def sd_card_plug_flag(self):
-        return self._camera_data_structure["SDcardplugFlag"]
+        """Whether an SD card is plugged in the camera and can be used. Integer [0..2]. (Read only).
+        
+        Note:
+        
+        * Values are as follows:
+            * 0: No SD card plugged in
+            * 1: SD card plugged in (not necessarily readable)
+            * 2: SD card plugged in and readable.
+        """
+        return self._camera_data_structure["SdcardplugFlag"]
         
     @property
     def error_code(self):
@@ -402,57 +455,91 @@ class CamConf:
         
     @property
     def loop_video_time(self):
+        """Maximum video time in Loop mode in minutes. Integer. (Read only)."""
         return self._camera_data_structure["LoopVideoTime"]
 
     @property
     def serial_number(self):
+        """Product serial number as returned by the camera. String. (Read only)."""
         return self._camera_data_structure["SerialNumber"]
         
     @property
     def product_model(self):
+        """Product model as returned by the camera. String. (Read only).
+        
+        Note:
+        
+        * This will always be "S1" in this camera.
+        """
         return self._camera_data_structure["ProductModel"]
         
     @property
     def firmware_software_version(self):
+        """Firmware and software version as returned by the camera. String. (Read only)."""
         return self._camera_data_structure["FirmwareSoftwareVersion"]
 
     @property
     def iso(self):
+        """Equivalent ISO in preset values. Integer [0..4]. (Read / Write).
+        
+        Note:
+        
+        * For this setting to be effective the camera must be in Manual Mode (setting_mode=1).
+        * The preset values are as follows:
+            * 0: AUTO
+            * 1: 100
+            * 2: 200
+            * 3: 400
+            * 4: 800
+        """
         return self._camera_data_structure["ISO"]
         
     @iso.setter
     def iso(self, new_iso_value):
-        """Sets ISO to one of []"""
-        if not new_iso_value in [0,1,2,3,4,5,6,7]:
+        if not new_iso_value in range(0,5):
             raise ValueError("Invalid value {new_iso_value} for parameter iso")
-        self._ops_to_apply.append([25,{"ISO":new_iso_value}])
-        # self._camera_data_structure["ISO"] = new_iso_value
+        self._ops_to_apply[25] = {"ISO":new_iso_value}
         return self
 
     @property    
     def white_balance_mode(self):
+        """White balance in color temperature presets. Integer [0..4]. (Read / Write).
+        
+        Note:
+        
+        * For this setting to be effective the camera must be in Manual Mode (setting_mode=1).
+        * The temperature presets are as follows:
+            * 0: AUTO
+            * 1: 2856K
+            * 2: 4000K
+            * 3: 5500K
+            * 4: 6500K
+        """
         return self._camera_data_structure["WhiteBalanceMode"]
         
     @white_balance_mode.setter
     def white_balance_mode(self, new_white_balance_value):
-        """Sets white balance to one of []"""
-        if not new_white_balance_value in [0,1,2,3,4,5,6,7]:
+        if not new_white_balance_value in range(0, 5):
             raise ValueError("Invalid value {new_white_balance_value} for parameter white_balance_mode")
-        # self._camera_data_structure["WhiteBalanceMode"] = new_white_balance_value
-        self._ops_to_apply.append([26, {"WhiteBalanceMode":new_white_balance_value}])
+        self._ops_to_apply[26] = {"WhiteBalanceMode":new_white_balance_value}
         return self
         
     @property
     def exposure_compensation(self):
+        """Exposure compensation in stops. Integer [0..13]. (Read / Write).
+        
+        Note:
+        
+        * For this setting to be effective the camera must be in Manual Mode (setting_mode=1).
+        * Exposure compensation spans a scale of 13 values (1..13) with 0 being the AUTO setting.
+        """
         return self._camera_data_structure["ExposureCompensation"]
 
     @exposure_compensation.setter
     def exposure_compensation(self, new_exposure_compensation_value):
-        """Sets ExposureCompensation to one of []"""
-        if not new_exposure_compensation_value in [0,1,2,3,4,5,6,7,8]:
+        if not new_exposure_compensation_value in range(0,14):
             raise ValueError("Invalid value {new_exposure_compensation_value} for parameter exposure_compensation")
-        # self._camera_data_structure["ExposureCompensation"] = new_exposure_compensation_value
-        self._ops_to_apply.append([27,{"ExposureCompensation":new_exposure_compensation_value}])
+        self._ops_to_apply[27] = {"ExposureCompensation":new_exposure_compensation_value}
         return self
         
     @property    
@@ -462,37 +549,49 @@ class CamConf:
     @property
     def capacity(self):
         return self._camera_data_structure["capacity"]
-        
-    @property    
-    def video_remain_time(self):
-        return self._camera_data_structure["RemainTime"]
-    
-    @property
-    def photo_remain_frames(self):
-        return self._camera_data_structure["RemainNum"]
-        
+                
     @property
     def mute(self):
+        """Whether to sound the camera's buzzer. Bool [0..1]. (Read only).
+        
+        Note:
+        
+        * This does not seem to be implemented on the S1. Even if you manage to switch this flag to 0
+          the buzzer still sounds."""
         return self._camera_data_structure["Mute"]
         
     @property
     def auto_shutdown(self):
+        """Minutes to auto-shutdown. Positive Integer. (Read only)."""
         return self._camera_data_structure["AutoShutDown"]
     
     @property
     def wifi_pass(self):
+        """The camera's network password. (Read only).
+        
+        Note:
+        
+        * The default password is 12345678
+        """
         return self._camera_data_structure["WifiPass"]
     
     @property
     def wifi_ssid(self):
+        """The SSID of the WiFi interface that the camera advertises. (Read only).
+        
+        Note:
+        
+        * By default, the SSID is Pano_[Camera-Serial-Number]."""
         return self._camera_data_structure["WifiSSID"]
         
     @property
     def remain_time(self):
+        """Remaining time for video recording, given the capacity of the SD card, in minutes. (Read only)."""
         return self._camera_data_structure["remainTime"]
         
     @property
     def remain_num(self):
+        """Remaining number of pictures, given the capacity of the SD card. (Read only)."""
         return self._camera_data_structure["remainNum"]
 
 
@@ -530,7 +629,7 @@ class PyWunderCam:
             raise Exception("Request failed with code:")
         return camera_data.json()
 
-    def __init__(self, camera_ip):
+    def __init__(self, camera_ip="192.168.100.1"):
         """Initialises the main WunderCam client through the camera's Internet Protocol (IP) address.
         
         :param camera_ip: The IP that the camera is on. For WunderCam this is ``192.168.100.1`` by default.
@@ -575,7 +674,7 @@ class PyWunderCam:
         
         if len(new_camera_state.operations)>0:
             returned_state_data = {}
-            for an_operation in new_camera_state.operations:
+            for an_operation in new_camera_state.operations.items():
                 returned_state_data.update(self.__req_data(an_operation[0], params=an_operation[1]))
             self._current_camera_state._camera_data_structure.update(returned_state_data)
         return self

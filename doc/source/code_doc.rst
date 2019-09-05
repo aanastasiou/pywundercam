@@ -3,8 +3,8 @@ API
 
 .. automodule:: wundercam.wundercam
 
-Dealing with file i/o
----------------------
+File I/O
+--------
 
 .. autoclass:: SingleResource 
     :members:
@@ -15,14 +15,24 @@ Dealing with file i/o
 .. autoclass:: ResourceContainer
     :members:
 
-Dealing with camera state
--------------------------
+Camera State
+------------
 
-.. autoclass:: CamConf
+.. autoclass:: CamState
     :members:
 
-Dealing with camera control
----------------------------
+Camera Control
+--------------
 
 .. autoclass:: PyWunderCam
     :members:
+    
+Convenience constants
+---------------------
+
+.. autodata:: IMG_FILE_RE
+.. autodata:: VID_FILE_RE
+.. autodata:: IMG_GROUP_BY
+.. autodata:: VID_GROUP_BY
+.. autodata:: IMG_ORDER_BY
+.. autodata:: VID_GROUP_BY

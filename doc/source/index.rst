@@ -138,7 +138,7 @@ software design around PyWunderCam.
    :caption: Contents:
    
    code_doc
-   hardware
+   design_notes
 
 
 

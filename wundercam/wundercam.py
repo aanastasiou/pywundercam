@@ -14,19 +14,34 @@ import PIL.Image                    # Serves images, directly capable to be modi
 from collections import OrderedDict
 
 # Convenience presets for the naming rules used by the S1 hardware to name Image and Video files.
-# The named attributes of these regular expressions are stored along with a file as the file's metadata.
-image_file_re = re.compile("Img_(?P<year>[0-9][0-9][0-9][0-9])(?P<month>[0-9][0-9])(?P<day>[0-9][0-9])_(?P<hour>[0-9][0-9])(?P<minute>[0-9][0-9])(?P<second>[0-9][0-9])_(?P<frame>[0-9][0-9][0-9])\.jpg")
-video_file_re = re.compile("Vid_(?P<year>[0-9][0-9][0-9][0-9])(?P<month>[0-9][0-9])(?P<day>[0-9][0-9])_(?P<hour>[0-9][0-9])(?P<minute>[0-9][0-9])(?P<second>[0-9][0-9])_(?P<frame>[0-9][0-9][0-9])\.mp4")
-# Named attributes (from the above sequences) to distinguish between single snapshots and "Continuous" snapshots. 
-# In the case of "Continuous" takes, WunderCam can pack them together in a sequence automatically.
-img_group_by = ["year", "month", "day", "hour", "minute", "second"]
-vid_group_by = img_group_by
-# Attribute to order image sequences by.
-# .. todo:: 
-#    LOW, It should be possible for order-by to operate over multiple fields, to produce more complex groupings (e.g.
-#    all images taken within an hour.
-img_order_by = "frame"
-vid_order_by = img_order_by
+
+#: Named regular expression for decoding metadata from the name of an image file.
+#: The named attributes of this regular expression are preserved along with a 
+#: file resource as metadata.
+IMG_FILE_RE = re.compile("Img_(?P<year>[0-9][0-9][0-9][0-9])(?P<month>[0-9][0-9])(?P<day>[0-9][0-9])_(?P<hour>[0-9][0-9])(?P<minute>[0-9][0-9])(?P<second>[0-9][0-9])_(?P<frame>[0-9][0-9][0-9])\.jpg")
+
+#: Named regular expression for decoding metadata from the name of a video file.
+#: The named attributes of this regular expression are preserved along with a 
+#: file resource as metadata.
+VID_FILE_RE = re.compile("Vid_(?P<year>[0-9][0-9][0-9][0-9])(?P<month>[0-9][0-9])(?P<day>[0-9][0-9])_(?P<hour>[0-9][0-9])(?P<minute>[0-9][0-9])(?P<second>[0-9][0-9])_(?P<frame>[0-9][0-9][0-9])\.mp4")
+
+# Named attributes (from the above sequences) to distinguish between single snapshots 
+# and "Continuous" snapshots. 
+# In the case of "Continuous" takes, PyWunderCam can pack them together in a sequence automatically.
+
+#: Attributes to group sets of images by. Images that are shot in quick succession (for example, 
+#: in "Continuous" (or "Burst") mode). In that case, the images can be grouped by same values in
+#: these attributes.
+IMG_GROUP_BY = ["year", "month", "day", "hour", "minute", "second"]
+
+#: Similar to ``IMG_GROUP_BY`` but for videos.
+VID_GROUP_BY = IMG_GROUP_BY
+
+#: Attribute to order image sequences by. This refers to a field of the metadata regular expressions.
+IMG_ORDER_BY = "frame"
+
+#: Similar to ``IMG_ORDER_BY`` but for videos.
+VID_ORDER_BY = IMG_ORDER_BY
 
 class AbstractResource:
     def __init__(self):
@@ -287,7 +302,7 @@ class ResourceContainer:
                 
                 
 
-class CamConf:
+class CamState:
     """Represents all data that capture the camera's state.
     
     The class exposes properties with Pythonic names that are fully documented and ensures that the values 
@@ -378,7 +393,7 @@ class CamConf:
         if new_shoot_mode in range(0, 7):
             self._ops_to_apply[21] = {"ModeType":new_shoot_mode}
         else:
-            raise Exception("Can't set that shoot mode")
+            raise ValueError("Can't set that shoot mode")
         
     @property
     def setting_mode(self):
@@ -395,7 +410,7 @@ class CamConf:
         if new_setting_mode in [0, 1]:
             self._ops_to_apply[29] = {"SettingMode":new_setting_mode}
         else:
-            raise Exception("Can't set that setting mode")
+            raise ValueError("Can't set that setting mode")
         
     @property
     def charge_flag(self):
@@ -702,7 +717,7 @@ class PyWunderCam:
             full_scan_3.update(self.__req_data(15))
             full_scan_3.update(self.__req_data(16))
             full_scan_3.update(self.__req_data(17))
-            cc = CamConf(full_scan_3)
+            cc = CamState(full_scan_3)
             return cc
         except Exception:
             raise Exception("Something Went wrong")
@@ -714,7 +729,7 @@ class PyWunderCam:
         self.__req_data(24)
         # TODO: Update frames and video time
         
-    def get_resources(self, img_file_re = image_file_re, vid_file_re = video_file_re, img_group_by = img_group_by, vid_group_by = vid_group_by, img_order_by = img_order_by):
+    def get_resources(self, img_file_re = IMG_FILE_RE, vid_file_re = VID_FILE_RE, img_group_by = IMG_GROUP_BY, vid_group_by = VID_GROUP_BY, img_order_by = IMG_ORDER_BY):
         """Returns the two resource sets that reside on the camera's file space. One for images and one for videos.
         
         :param img_file_re: Regular expression to unpack image filename metadata. By default set to the one the 
@@ -730,5 +745,5 @@ class PyWunderCam:
         :type img_order_by: str
         """
         
-        return {"images":ResourceContainer("%sImage/" % self.file_io_uri, file_re = image_file_re, group_by = img_group_by, order_by = img_order_by), 
-                "videos":ResourceContainer("%sVideo/" % self.file_io_uri, file_re = video_file_re, group_by = vid_group_by)}
+        return {"images":ResourceContainer("%sImage/" % self.file_io_uri, file_re = IMG_FILE_RE, group_by = IMG_GROUP_BY, order_by = IMG_ORDER_BY), 
+                "videos":ResourceContainer("%sVideo/" % self.file_io_uri, file_re = VID_FILE_RE, group_by = VID_GROUP_BY)}

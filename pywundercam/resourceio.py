@@ -13,6 +13,8 @@ import copy                         # Handles copying of the ResourceContainer d
 import requests                     # Handles all file I/O activity with the camera over an HTTP interface
 import PIL.Image                    # Serves images, directly capable to be modified by python code.
 
+from .exceptions import (PyWunderCamConnectionError, PyWunderCamContentTypeError, 
+                         PyWunderCamDataTransferError, PyWunderCamTimeOutError)
 
 class AbstractResource:
     def __init__(self):
@@ -78,16 +80,21 @@ class SingleResource(AbstractResource):
         
         try:
             image_data = requests.get(self._full_remote_filename, timeout=5)
+        except requests.exceptions.ConnectionError:
+            raise PyWunderCamConnectionError("Connection error while retrieveing" % self._full_remote_filename)
         except requests.exceptions.Timeout:
-            raise Exception("Request Timedout")
+            raise PyWunderCamTimeOutError("Request timed out.")
+        except:
+            raise
             
-        if not image_data.status_code==200:
-            raise Exception("Transfer went wrong")
-            
+        if image_data.status_code!=200:
+            raise PyWunderCamDataTransferError(message="Response status code:%s. %s." % (image_data.status_code, 
+                                               camera_data.message), response = image_data)
+
         if image_data.headers["content-type"] == "image/jpeg":    
             return PIL.Image.open(io.BytesIO(image_data.content))
         else:
-            raise Exception("Cannot handle content type %s" % image_data.headers["content-type"])
+            raise PyWunderCamContentTypeError("Cannot handle content type: %s" % image_data.headers["content-type"])
             
     def save_to(self, filename=None):
         """Saves a resource to a local path as a binary file.

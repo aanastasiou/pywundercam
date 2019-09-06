@@ -11,6 +11,7 @@ The CamState class handles:
 """
 
 from collections import OrderedDict # Preserves the order by which commands are submitted to the camera.
+from .exceptions import PyWunderCamValueError
 
 class CamState:
     """Represents all data that capture the camera's state.
@@ -103,7 +104,7 @@ class CamState:
         if new_shoot_mode in range(0, 7):
             self._ops_to_apply[21] = {"ModeType":new_shoot_mode}
         else:
-            raise ValueError("Can't set that shoot mode")
+            raise PyWunderCamValueError("Shoot mode %s invalid" % new_shoot_mode)
         
     @property
     def setting_mode(self):
@@ -120,7 +121,7 @@ class CamState:
         if new_setting_mode in [0, 1]:
             self._ops_to_apply[29] = {"SettingMode":new_setting_mode}
         else:
-            raise ValueError("Can't set that setting mode")
+            raise PyWunderCamValueError("Setting mode %s invalid" % new_setting_mode)
         
     @property
     def charge_flag(self):
@@ -222,7 +223,7 @@ class CamState:
     @iso.setter
     def iso(self, new_iso_value):
         if not new_iso_value in range(0,5):
-            raise ValueError("Invalid value {new_iso_value} for parameter iso")
+            raise PyWunderCamValueError("ISO setting %s invalid." % new_iso_value)
         self._ops_to_apply[25] = {"ISO":new_iso_value}
         return self
 
@@ -245,7 +246,7 @@ class CamState:
     @white_balance_mode.setter
     def white_balance_mode(self, new_white_balance_value):
         if not new_white_balance_value in range(0, 5):
-            raise ValueError("Invalid value {new_white_balance_value} for parameter white_balance_mode")
+            raise PyWunderCamValueError("White balance setting %s invalid" % new_white_balance_value)
         self._ops_to_apply[26] = {"WhiteBalanceMode":new_white_balance_value}
         return self
         
@@ -263,7 +264,7 @@ class CamState:
     @exposure_compensation.setter
     def exposure_compensation(self, new_exposure_compensation_value):
         if not new_exposure_compensation_value in range(0,14):
-            raise ValueError("Invalid value {new_exposure_compensation_value} for parameter exposure_compensation")
+            raise PyWunderCamValueError("Exposure compensation setting %s invalid ." % new_exposure_compensation_value)
         self._ops_to_apply[27] = {"ExposureCompensation":new_exposure_compensation_value}
         return self
         

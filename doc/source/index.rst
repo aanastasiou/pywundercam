@@ -8,10 +8,12 @@ Welcome to PyWunderCam's documentation!
 
 PyWunderCam is a Python module that enables control of the Wunder 360 S1 panoramic camera from a Python program.
 
+.. image:: _static/Wunder360S1.jpg
+
 The camera is based on a `Rockchip 1108 System on Chip (SoC) <http://rockchip.wikidot.com/rk1108>`_ running Linux. 
 Within its operating system, it raises three services to serve images and video, control the camera and stream video 
-over the WiFi interface. In addition to these services, the camera presents itself as a standard webcam if connected 
-via USB but with minimal control over its parameters. 
+over a WiFi interface. In addition to these services, the camera presents itself as a standard webcam if connected 
+via USB. 
 
 At the time of writing, PyWunderCam interfaces with the first two services and enables functionality that is not 
 possible via the provided mobile phone application. 

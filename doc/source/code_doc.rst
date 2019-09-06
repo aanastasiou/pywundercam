@@ -1,10 +1,10 @@
 API
 ===
 
-.. automodule:: wundercam.wundercam
+.. automodule:: pywundercam
 
-File I/O
---------
+Resource I/O
+------------
 
 .. autoclass:: SingleResource 
     :members:
@@ -27,8 +27,8 @@ Camera Control
 .. autoclass:: PyWunderCam
     :members:
     
-Convenience constants
----------------------
+Constants
+---------
 
 .. autodata:: IMG_FILE_RE
 .. autodata:: VID_FILE_RE
@@ -36,3 +36,10 @@ Convenience constants
 .. autodata:: VID_GROUP_BY
 .. autodata:: IMG_ORDER_BY
 .. autodata:: VID_GROUP_BY
+
+
+Exceptions
+----------
+
+.. automodule:: pywundercam.exceptions
+    :members:

@@ -137,8 +137,9 @@ software design around PyWunderCam.
    :maxdepth: 2
    :caption: Contents:
    
+   concepts
+   details
    code_doc
-   design_notes
 
 
 

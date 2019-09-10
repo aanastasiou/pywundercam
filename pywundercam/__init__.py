@@ -15,6 +15,7 @@ from .exceptions import (PyWunderCamTimeOutError, PyWunderCamConnectionError, Py
                         PyWunderCamSDCardUnusable)
 from .resourceio import SingleResource, SequenceResource, ResourceContainer
 from .state import CamState
+import time
 
 
 # Convenience presets for the naming rules used by the S1 hardware to name Image and Video files.
@@ -114,10 +115,10 @@ class PyWunderCam:
         # If either of the services are not in place, the camera is considered inactive.    
         if not (is_camera_control_service_live and is_camera_web_server_live):
             raise PyWunderCamCameraNotFoundError("Camera Not Found at %s" % camera_ip)
-            
+
         # If the SD Card is not plugged in AND formatted, the camera itself will raise an alarm.
-        if sd_card_plug_flag["SdCardplugFlag"]!=2:
-            raise PyWunderCamSDCardUnusable("The SD card is not in a usable state (%s)." % sd_card_plug_flag["SdCardplugFlag"])
+        if sd_card_flag["SdcardplugFlag"]!=2:
+            raise PyWunderCamSDCardUnusable("The SD card is not in a usable state (%s)." % sd_card_flag["SdcardplugFlag"])
         # At this point everything has gone well, so make the final assignements and perform a full read of the camera's
         # state.    
         self._camera_ip = camera_ip
@@ -207,5 +208,68 @@ class PyWunderCam:
         :type img_order_by: str
         """
         
-        return {"images":ResourceContainer("%sImage/" % self.file_io_uri, file_re = IMG_FILE_RE, group_by = IMG_GROUP_BY, order_by = IMG_ORDER_BY), 
-                "videos":ResourceContainer("%sVideo/" % self.file_io_uri, file_re = VID_FILE_RE, group_by = VID_GROUP_BY)}
+        return {"images":ResourceContainer("%sImage/" % self._file_io_uri, file_re = IMG_FILE_RE, group_by = IMG_GROUP_BY, order_by = IMG_ORDER_BY), 
+                "videos":ResourceContainer("%sVideo/" % self._file_io_uri, file_re = VID_FILE_RE, group_by = VID_GROUP_BY)}
+
+
+class PyWunderCamAuto(PyWunderCam):
+    """
+    Represents an "automatic" camera with a set of quick and easy defaults for quick shots.
+    """        
+    def _trigger_shot(self, single_or_continuous = 0, iso = None, white_balance_mode = None, exposure_compensation = None):
+        # Take a snapshot of the camera's resources before the shot
+        before_shot = self.get_resources()
+        # Get the camera's state
+        current_state = self.camera_state
+        
+        # Set it to the right shoot mode
+        if single_or_continuous == 0:
+            current_state.shoot_mode = 0
+        else:
+            current_state.shoot_mode = 3
+        
+        # Check if the camera needs to go manual
+        if iso or white_balance_mode or exposure_compensation:
+            current_state.setting_mode = 1
+            if iso:
+                current_state.iso = iso
+            
+            if exposure_compensation:
+                current_state.exposure_compensation = exposure_compensation
+                
+            if white_balance_mode:
+                current_state.white_balance_mode = white_balance_mode
+        else:
+            current_state.setting_mode = 0
+            
+        # Reset the state to the camera
+        self.camera_state = current_state
+        # Take the shot
+        self.trigger()
+        # Very brief pause to give time to the camera to write the file to the SD card
+        time.sleep(10)
+        # Take a snapshot of the camera's resources after the shot
+        after_shot = self.get_resources()
+        return after_shot["images"]-before_shot["images"]
+
+    def single_shot(self, iso = None, white_balance_mode = None, exposure_compensation = None):
+        """Triggers a single snapshot.
+        
+        If none of the image parameters are set, the camera enters automatic mode, otherwise, it enters manual mode, 
+        sets up the shot and executes it.
+        
+        :param iso:
+        :type iso:
+        :param white_balance_mode:
+        :type white_balance_mode:
+        :param exposure_compensation:
+        :type exposure_compensation:
+        
+        :returns: ResourceContainer with the resources that were created from this shot
+        """
+        return self._trigger_shot(0, iso, white_balance_mode, exposure_compensation)
+        
+        
+    def continuous_shot(self, iso=None, white_balance_mode=None, exposure_compensation=None):
+        """Triggers a burst mode shot."""
+        return self._trigger_shot(1, iso, white_balance_mode, exposure_compensation)

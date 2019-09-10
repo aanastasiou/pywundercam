@@ -7,6 +7,7 @@ This module handles all resource I/O (image and video files) from the camera to 
 :date: August 2019
 """
 
+import re
 import os                           # Handles paths and filenames
 import io                           # File handlers for streams in saving SingleStorage
 import copy                         # Handles copying of the ResourceContainer data structure
@@ -186,7 +187,7 @@ class SequenceResource(AbstractResource):
         """
         res_dir = directory or "./"
         for an_item in self._seq:
-            file_name = "%s%s" % (res_dir, an_item.full_remote_filename)
+            file_name = "%s%s" % (res_dir, os.path.split(an_item.full_remote_filename)[-1])
             an_item.save_to(file_name)
         
     

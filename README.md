@@ -1,10 +1,10 @@
 # PyWunderCam
 
-PyWunderCam is a Python module that enables control of the Wunder 360 S1 panoramic camera from a Python program.
+`PyWunderCam` is a Python module that enables control of the Wunder 360 S1 panoramic camera from a Python program.
 
-![](static/Wunder360S1.jpg)
+![](doc/source/_static/Wunder360S1.jpg)
 
-The camera is based on a `Rockchip 1108 System on Chip (SoC) <http://rockchip.wikidot.com/rk1108>`_ running Linux. 
+The camera is based on a Rockchip 1108 System on Chip (SoC) running Linux. 
 Within its operating system, it raises three services to serve images and video, control the camera and stream video 
 over a WiFi interface. In addition to these services, the camera presents itself as a standard webcam if connected 
 via USB. 
@@ -17,110 +17,81 @@ Streaming video and extended functionality are scheduled for upcoming releases.
 
 ## Quickstart
 
-### Directing the camera to take pictures and video
-
-The most usual cycle of interaction with the hardware is as follows:
-
-0. Ensure that the computer has joined the network advertised by the camera.
-1. Connect to the camera via the PyWunderCam client.
-2. Get the camera state.
-3. Ensure that it is in the desired...state.
-4. Trigger the action (e.g. take a snapshot, burst, video, etc)
-
-So, to take a 360 picture:
-
 ```
-    from pywundercam import PyWunderCam
+    from pywundercam import PyWunderCamAuto
     
-    camera_client = PyWunderCam("192.168.100.1")
-    camera_state = camera_client.state
-    # Ensure that the camera is in single picture mode
-    camera_state.shoot_mode = 0
-    # Set the camera to the desired state
-    camera_client.state = camera_state
-    # Trigger the camera
-    camera_client.trigger()
-```
+    camera_control = PyWunderCamAuto()
+```    
 
-Once `trigger()` is called, the camera will sound a beep and it will have taken a picture and stored it in its 
-internal SD card. 
-
-To take a set of pictures in burst mode, change the `shoot_mode` to `3` and to start (and stop) taking a 
-video, set the `shoot_mode` to `1`.
-
-
-### Retrieving the captured images / videos
-
-This is achieved with a number of steps that are very similar to directing the camera to take pictures:
-
-0. Ensure that the computer has joined the network advertised by the camera.
-1. Connect to the camera via the PyWunderCam client.
-2. Get the camera state.
-3. *Get the file system state* (**BEFORE** the action) 
-4. Ensure that camera state is in the desired...state.
-5. Trigger the action (e.g. take a snapshot, burst, video, etc)
-6. *Get the file system state* (**AFTER** the action)
-7. *Retrieve the difference AFTER - BEFORE, to determine which files were generated and download them*.
-
-So, to take a 360 picture and retrieve the image data:
+### Single 360 Shot
 
 ```
-    from pywundercam import PyWunderCam
+    single_photo = camera_control.single_shot()
+```
+
+
+### Continuous (Burst) 360 Shot
+
+```
+    photos = camera_control.continuous_shot()
+```
+
+### Altering the ISO, White Balance and Exposure Compensation Modes
+
+Both of the above functions ( `.single_shot()`, `.continuous_shot()`) take optional parameters 
+`iso`, `white_balance_mode` and `exposure_compensation`. For more information on the values of 
+camera state parameters, please see `pywundercam.CamState`.
+
+### Storing Images
+
+To store the result of a single shot:
+
+```
+    single_photo[0].save_to("MyImage.jpg")
+```
+
+To store the result of a continuous (burst) shot:
+
+```
+    photos[0].save_to("./")
+```    
+
+Worth noting at this point that:
+
+1. In the case of a single image, all that is required is a filename. When saving 
+   the result of a continuous (burst) shot, all that is required is a directory 
+   in which all files belonging to the same shot will be stored.
+
+2. Depending on file sizes and number of shots (in continuous mode), the file transfers 
+   might appear to be inserting a small delay in the whole process.
+       
+### Displaying images
+
+`pywundercam` makes use of the `pillow` module and returns images that are ready to be forwarded to 
+Python's ritch ecosystem of image processing modules. A quick way of displaying the image is to use `matplotlib`.
+
+Continuing from the above example, to display the result of a single shot:
+
+```
+    from matplotlib import pyplot as plt
     
-    camera_client = PyWunderCam("192.168.100.1")
-    camera_state = camera_client.state
-    # Ensure that the camera is in single picture mode
-    camera_state.shoot_mode = 0
-    # Set the camera to the desired state
-    camera_client.state = camera_state
-    # Get a "snapshot" of its file contents BEFORE the shot
-    contents_before = camera_client.get_resources()
-    # Trigger the camera
-    camera_client.trigger()
-    # Get a "snapshot" of the file contents AFTER the shot
-    contents_after = camera_client.get_resources()
-    # Create a new snapshot that only contains the image that was acquired by this action
-    latest_image = contents_after["images"] - contents_before["images"]
+    plt.imshow(single_photo[0].get())
+    plt.axis("off")
+    plt.show()
 ```
     
-Without getting into a lot of detais at this point, `latest_image` will contain only one image. To retrieve it:
+And in the case of a continuous (burst) shot, a specific picture out of the set would have to be chosen first:
 
 ```
-    shot_image = latest_image[0].get()
+    plt.imshow(photos[0].get())
+    plt.axis("off")
+    plt.show()
 ```
-    
-The `get()` function will trigger a file transfer from the camera to the computer over WiFi and depending on the size
-of the file, it will introduce a small pause.
-
-At the time of writing, PyWunderCam serves images as `PIL.Image` objects. Therefore, after `get()`, the image is 
-already in a form that can be passed to other algorithms (e.g. machine vision) for further processing. 
-
-Trying to retrieve a video in the same way will **raise an exception**. 
 
 
-Videos can still be transferred over WiFi and stored to the local computer for further processing.
-
-To do this:
-
-```
-    from pywundercam import PyWunderCam
-    
-    camera_client = PyWunderCam("192.168.100.1")
-    camera_state = camera_client.state
-    # Ensure that the camera is in video mode
-    camera_state.shoot_mode = 1
-    # Set the camera to the desired state
-    camera_client.state = camera_state
-    # Get a "snapshot" of its file contents BEFORE the shot
-    contents_before = camera_client.get_resources()
-    # Trigger the camera
-    camera_client.trigger()
-    # Get a "snapshot" of the file contents AFTER the shot
-    contents_after = camera_client.get_resources()
-    # Create a new snapshot that only contains the video that was acquired by this action
-    latest_video = contents_after["videos"] - contents_before["videos"]
-    latest_video[0].save_to("myvideo.mp4")
-```
+This concludes the quickstart guide which makes use of `PyWunderCamAuto`. Although this client allows you to take 
+pictures in single and continuous (burst) modes, the real power of `pywundercam` is in the underlying client object 
+`PyWunderCam` that allows much more fine control over the complete parameter set of the Wunder 360 S1.
 
 This concludes the quickstart. 
 

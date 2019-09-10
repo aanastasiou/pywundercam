@@ -27,6 +27,9 @@ Camera Control
 .. autoclass:: PyWunderCam
     :members:
     
+. autoclass:: PyWunderCamAuto
+    :members:
+    
 Constants
 ---------
 

@@ -14,6 +14,14 @@ possible via the provided mobile phone application.
 
 Streaming video and extended functionality are scheduled for upcoming releases.
 
+## Installation
+
+At the moment, installation is recommended directly from this repository with:
+
+```
+pip install git+https://github.com/aanastasiou/pywundercam
+```
+
 
 ## Quickstart
 

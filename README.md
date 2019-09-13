@@ -91,9 +91,6 @@ And in the case of a continuous (burst) shot, a specific picture out of the set 
 
 This concludes the quickstart guide which makes use of `PyWunderCamAuto`. Although this client allows you to take 
 pictures in single and continuous (burst) modes, the real power of `pywundercam` is in the underlying client object 
-`PyWunderCam` that allows much more fine control over the complete parameter set of the Wunder 360 S1.
+`PyWunderCam` that allows finer control over the complete parameter set of the Wunder 360 S1.
 
-This concludes the quickstart. 
-
-You could now browse over to the rest of the documentation on readthedocs to learn more about exceptions, hardware, and 
-software design around PyWunderCam.
+You can now [browse the rest of the documentation](https://pywundercam.readthedocs.io/en/latest/) to learn more about exceptions, hardware, and the general design of PyWunderCam.

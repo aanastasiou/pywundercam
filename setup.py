@@ -11,7 +11,7 @@ setup(
     author="Athanasios Anastasiou",
     author_email="athanastasiou@gmail.com",
     zip_safe=True,
-    url="",
+    url="https://github.com/aanastasiou/pywundercam",
     license="License :: OSI Approved :: Apache Software License",
     packages=find_packages(exclude=("test", "test.*")),
     keywords="image camera panoramic 360",
